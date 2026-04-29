@@ -216,8 +216,14 @@ class ExcelParserAgent:
         if val is None or pd.isna(val):
             raise ValueError(f"Missing required field '{field}'")
         try:
-            # Israeli reports sometimes use ',' as decimal separator
-            cleaned = str(val).replace(",", ".").replace("\xa0", "").strip()
+            # Israeli reports use ',' as thousands separator or decimal separator.
+            # Strategy: if both ',' and '.' exist, ',' is thousands sep → remove it.
+            # If only ',' exists, treat it as decimal separator → replace with '.'.
+            cleaned = str(val).replace("\xa0", "").strip()
+            if "," in cleaned and "." in cleaned:
+                cleaned = cleaned.replace(",", "")
+            else:
+                cleaned = cleaned.replace(",", ".")
             return abs(float(cleaned))   # abs() — we always store positive amounts
         except (ValueError, TypeError) as exc:
             raise ValueError(f"Cannot parse '{field}' as number: {val!r}") from exc

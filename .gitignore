@@ -100,6 +100,14 @@ pnpm-debug.log*
 .claude/todos/
 
 # ============================================
+# User data (Excel uploads, financial files)
+# ============================================
+data/uploads/*.xlsx
+data/uploads/*.csv
+data/uploads/*.xls
+!data/uploads/.gitkeep
+
+# ============================================
 # Runtime / Misc
 # ============================================
 *.pid

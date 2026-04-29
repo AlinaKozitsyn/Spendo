@@ -7,6 +7,14 @@ openpyxl>=3.1.2
 # --- AI Classification ---
 anthropic>=0.30.0
 
+# --- Fuzzy Matching ---
+rapidfuzz>=3.9.0
+
+# --- Web API ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
 # --- Testing ---
 pytest>=8.0.0
 pytest-cov>=5.0.0

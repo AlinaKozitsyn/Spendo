@@ -83,6 +83,7 @@ CATEGORY_RULES: dict[str, dict] = {
             "בית מרקחת", "קופת חולים", "מכבי", "כללית", "ליאומית",
             "pharmacy", "hospital", "clinic", "doctor", "health",
             "super-pharm", "super pharm", "סופר פארם",
+            "בי קיור", "bi cure", "לייזר",
         ],
     },
     # --- Shopping & Retail ---
@@ -111,6 +112,24 @@ CATEGORY_RULES: dict[str, dict] = {
         "keywords": [
             "קרן", "חיסכון", "השקעה", "pension", "savings", "investment",
             "בנק", "bank", "ביטוח מנהלים",
+        ],
+    },
+    # --- Transfers & Fees ---
+    "Transfers": {
+        "group": "Other",
+        "icon": "🔄",
+        "keywords": [
+            "העברה", "העברת כספים", "transfer", "עמלה", "commission",
+            "משכנתא", "mortgage", "הלוואה", "loan",
+        ],
+    },
+    # --- Education ---
+    "Education": {
+        "group": "Essentials",
+        "icon": "📚",
+        "keywords": [
+            "אוניברסיטה", "מכללה", "university", "college", "course",
+            "קורס", "לימוד", "udemy", "coursera",
         ],
     },
 }

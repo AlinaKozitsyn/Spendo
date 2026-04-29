@@ -7,13 +7,17 @@ RESPONSIBILITY:
   Classify a list of Transaction objects into ClassifiedTransactions by
   assigning each one a Category.
 
-TWO-PASS STRATEGY:
+THREE-PASS STRATEGY:
   Pass 1 — Rule Engine (rules.py):
-    Fast, deterministic keyword matching. Handles ~80% of transactions.
+    Fast, deterministic keyword matching. Handles ~60% of transactions.
     Confidence = 1.0.
 
+  Pass 1.5 — Fuzzy Matching (fuzzy_matcher.py):
+    Catches near-misses: typos, extra spaces, abbreviations.
+    Handles ~15% of transactions. Confidence = 0.9.
+
   Pass 2 — AI Fallback (Claude API):
-    For transactions the rules couldn't match (confidence == 0.0), we
+    For transactions neither rules nor fuzzy could match, we
     send the merchant name to Claude and ask it to pick a category.
     This handles unusual/new merchants without code changes.
     Confidence = 0.7 (AI inference is good but not guaranteed).
@@ -38,6 +42,7 @@ from typing import Optional
 import anthropic
 
 from backend.modules.shared.src import Category, ClassifiedTransaction, Transaction
+from .fuzzy_matcher import classify_by_fuzzy
 from .rules import CATEGORY_RULES, UNCATEGORIZED, classify_by_rules
 
 logger = logging.getLogger(__name__)
@@ -103,7 +108,9 @@ class ClassificationAgent:
         results: list[ClassifiedTransaction] = []
         needs_ai: list[tuple[int, Transaction]] = []  # (index, txn)
 
-        # --- Pass 1: Rule engine ---
+        # --- Pass 1: Rule engine (exact keyword match) ---
+        needs_fuzzy: list[tuple[int, Transaction]] = []
+
         for idx, txn in enumerate(transactions):
             category, confidence = classify_by_rules(txn.merchant_name)
             if confidence > 0.0:
@@ -115,7 +122,7 @@ class ClassificationAgent:
                     )
                 )
             else:
-                # Placeholder — will be replaced in Pass 2
+                # Placeholder — will be replaced in Pass 1.5 or Pass 2
                 results.append(
                     ClassifiedTransaction(
                         transaction=txn,
@@ -123,11 +130,29 @@ class ClassificationAgent:
                         confidence=0.0,
                     )
                 )
+                needs_fuzzy.append((idx, txn))
+
+        logger.info(
+            "ClassificationAgent Pass 1: %d rule-matched, %d unmatched",
+            len(transactions) - len(needs_fuzzy),
+            len(needs_fuzzy),
+        )
+
+        # --- Pass 1.5: Fuzzy matching ---
+        for idx, txn in needs_fuzzy:
+            category, confidence = classify_by_fuzzy(txn.merchant_name)
+            if confidence > 0.0:
+                results[idx] = ClassifiedTransaction(
+                    transaction=txn,
+                    category=category,
+                    confidence=confidence,
+                )
+            else:
                 needs_ai.append((idx, txn))
 
         logger.info(
-            "ClassificationAgent Pass 1: %d rule-matched, %d need AI",
-            len(transactions) - len(needs_ai),
+            "ClassificationAgent Pass 1.5: %d fuzzy-matched, %d need AI",
+            len(needs_fuzzy) - len(needs_ai),
             len(needs_ai),
         )
 
