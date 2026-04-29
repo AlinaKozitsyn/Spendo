@@ -5,6 +5,86 @@
 
 ---
 
+## DEC-012 — Transaction Model Extended Fields (billing_date, category, raw_row)
+
+**Date:** Sprint 01
+**Status:** Accepted
+
+**Context:**
+Israeli credit card exports include fields beyond the minimum (date, merchant, amount). Some providers include billing date, their own category/sector, and other metadata. We also need the raw row data for debugging and future manual correction UI.
+
+**Decision:**
+Add optional fields to Transaction: `billing_date`, `category`, `source_company`, `raw_row`. Add diagnostic fields to ParseResult: `detected_columns`, `missing_fields`, `raw_columns`, `header_row`.
+
+**Rationale:**
+- Captures provider-assigned categories for higher classification accuracy
+- raw_row enables a manual correction UI in Phase 2
+- Diagnostic fields enable clear, actionable error messages when parsing fails
+- All new fields are optional — no breaking change for existing code
+
+---
+
+## DEC-011 — Case-Insensitive Column Matching
+
+**Date:** Sprint 01
+**Status:** Accepted
+
+**Context:**
+English column names may appear in any case (Title Case, UPPERCASE, lowercase). Hebrew has no case distinction.
+
+**Decision:**
+The `_norm()` function lowercases all column names before matching.
+
+**Rationale:**
+- Hebrew is unaffected by lowercasing
+- English headers now match regardless of case
+- Simple, zero-cost operation
+
+---
+
+## DEC-010 — Best-Row Header Detection (Highest Alias Match Count)
+
+**Date:** Sprint 01
+**Status:** Accepted (updated from original threshold-based approach)
+
+**Context:**
+Real Israeli bank exports have title/summary rows before the actual column headers. The parser needs to find the header row automatically.
+
+**Decision:**
+Scan the first 30 rows, pick the row with the MOST alias matches (minimum 2).
+
+**Rationale:**
+- "Most matches" is more robust than "first row with 2+ matches"
+- Avoids false positives where a title row coincidentally contains a known word
+- 30-row scan covers all known formats (typically 0-5 title rows)
+- Falls back to row 0 if no match found (backward compatible)
+
+---
+
+## DEC-009 — Multi-Alias Column Mapping for Israeli Card Providers
+
+**Date:** Sprint 01
+**Status:** Accepted
+
+**Context:**
+Israeli credit card providers (Cal, Max, Isracard) use different Hebrew column headers for the same fields. A single-value column map cannot handle this variation.
+
+**Options:**
+1. **Single map per provider** — user selects their provider before upload
+2. **Multi-alias table** — each canonical field maps to all known variants
+3. **AI-based column detection** — use LLM to identify columns
+
+**Decision:**
+Multi-alias table (`COLUMN_ALIASES`) where each field has 6-10 known variants.
+
+**Rationale:**
+- Zero user friction — no need to select provider or configure anything
+- Deterministic and fast — no API calls needed
+- Easy to extend: adding a new provider is just adding aliases to the dict
+- AI detection is overkill for a problem with a finite, known set of column names
+
+---
+
 ## DEC-008 — Wallet Extension Framework: Chrome Manifest V3
 
 **Date:** Sprint 01

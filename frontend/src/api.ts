@@ -14,7 +14,14 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
   const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Upload failed");
+    const detail = err.detail;
+    if (typeof detail === "string") {
+      throw new Error(detail);
+    }
+    if (detail && typeof detail === "object") {
+      throw new Error(detail.message || detail.hint || JSON.stringify(detail));
+    }
+    throw new Error("Upload failed");
   }
   return res.json();
 }

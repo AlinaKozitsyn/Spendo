@@ -6,6 +6,16 @@ Public surface of the classifier module.
 
 from .classifier import ClassificationAgent
 from .fuzzy_matcher import classify_by_fuzzy
-from .rules import CATEGORY_RULES, classify_by_rules
+from .llm_classifier import LLMClassifier
+from .reporting import generate_classification_report
+from .rules import ALLOWED_CATEGORIES, CATEGORY_RULES, classify_by_rules
 
-__all__ = ["ClassificationAgent", "CATEGORY_RULES", "classify_by_rules", "classify_by_fuzzy"]
+__all__ = [
+    "ClassificationAgent",
+    "LLMClassifier",
+    "ALLOWED_CATEGORIES",
+    "CATEGORY_RULES",
+    "classify_by_rules",
+    "classify_by_fuzzy",
+    "generate_classification_report",
+]

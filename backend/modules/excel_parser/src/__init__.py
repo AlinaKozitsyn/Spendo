@@ -7,6 +7,6 @@ Usage from other modules:
     from backend.modules.excel_parser import ExcelParserAgent
 """
 
-from .parser import DEFAULT_COLUMN_MAP, ExcelParserAgent
+from .parser import COLUMN_ALIASES, ExcelParserAgent
 
-__all__ = ["ExcelParserAgent", "DEFAULT_COLUMN_MAP"]
+__all__ = ["ExcelParserAgent", "COLUMN_ALIASES"]

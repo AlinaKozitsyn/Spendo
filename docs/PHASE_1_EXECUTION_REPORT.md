@@ -168,7 +168,7 @@ python -m backend.scripts.generate_sample_data
 | Single-file upload only | Multi-file + history in Phase 2 |
 | No budget management UI | Smart Budgeting in Phase 3 |
 | No wallet extension | Digital Wallet in Phase 3 |
-| Fixed Hebrew column map | Configurable column maps in Phase 2 |
+| ~~Fixed Hebrew column map~~ | ~~Configurable column maps in Phase 2~~ — **RESOLVED**: Multi-alias `COLUMN_ALIASES` supports Cal, Max, Isracard |
 
 ---
 

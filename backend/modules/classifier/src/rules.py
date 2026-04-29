@@ -1,174 +1,79 @@
 """
 classifier/src/rules.py
 =======================
-Rule-based keyword classification engine (no AI required).
+Fixed category taxonomy for transaction classification.
 
-RESPONSIBILITY:
-  Map a merchant name → Category using a deterministic keyword lookup table.
-  This is the fast, cheap, offline path. It handles the vast majority of
-  transactions where the merchant name is predictable (e.g. "רמי לוי" → Groceries).
-
-WHY RULES FIRST?
-  - Instant, no API cost
-  - Reproducible: same input always yields same output (confidence = 1.0)
-  - Easy to audit and correct
-  - The AI fallback (ClassificationAgent) only kicks in for unknowns
-
-ADDING NEW RULES:
-  Edit the CATEGORY_RULES dict below. Each entry is:
-    "<CategoryName>": {
-        "group": "<GroupName>",
-        "keywords": ["keyword1", "keyword2", ...],
-        "icon": "🛒"   # optional
-    }
-  Keywords are matched case-insensitively against the merchant name.
+This module intentionally does not contain merchant-specific rules. Groq LLM
+classification is the primary classifier; this file only defines the allowed
+category set and category metadata used for validation and UI grouping.
 """
 
 from backend.modules.shared.src import Category
 
-# ---------------------------------------------------------------------------
-# Master category rule table
-# Hebrew and English keywords are both supported.
-# ---------------------------------------------------------------------------
+ALLOWED_CATEGORIES: list[str] = [
+    "Groceries",
+    "Restaurants / Cafes",
+    "Food Delivery",
+    "Transportation",
+    "Fuel / Car",
+    "Public Transport",
+    "Shopping / Clothing",
+    "Health / Pharmacy",
+    "Beauty / Cosmetics",
+    "Home",
+    "Utilities / Bills",
+    "Education",
+    "Entertainment",
+    "Travel",
+    "Digital Services / Subscriptions",
+    "Banking Fees / Interest",
+    "Cash Withdrawal",
+    "Other",
+]
 
-CATEGORY_RULES: dict[str, dict] = {
-    # --- Groceries ---
-    "Groceries": {
-        "group": "Essentials",
-        "icon": "🛒",
-        "keywords": [
-            "רמי לוי", "שופרסל", "מגה", "ויקטורי", "יינות ביתן", "סופר",
-            "superpharm", "super-pharm", "super pharm",
-            "shufersal", "rami levy", "mega", "victory",
-            "carrefour", "osher ad", "אושר עד",
-        ],
-    },
-    # --- Dining & Restaurants ---
-    "Dining": {
-        "group": "Leisure",
-        "icon": "🍽️",
-        "keywords": [
-            "מקדונלד", "בורגר קינג", "שווארמה", "פיצה", "סושי", "קפה",
-            "mcdonalds", "burger king", "pizza", "sushi", "cafe", "coffee",
-            "ten bis", "תן ביס", "wolt", "ווולט", "mishloha", "mishlocha",
-        ],
-    },
-    # --- Fuel & Transportation ---
-    "Fuel & Transport": {
-        "group": "Essentials",
-        "icon": "⛽",
-        "keywords": [
-            "דלק", "סונול", "פז", "גז", "ten", "תחנת דלק",
-            "delek", "sonol", "paz", "fuel", "petrol",
-            "רכבת", "אגד", "מטרופולין", "דן",
-            "rail", "bus", "metro", "train", "uber", "gett",
-        ],
-    },
-    # --- Utilities & Bills ---
-    "Bills & Utilities": {
-        "group": "Essentials",
-        "icon": "📄",
-        "keywords": [
-            "חשמל", "מים", "גז", "פלאפון", "סלקום", "הוט", "HOT",
-            "bezeq", "בזק", "partner", "פרטנר", "012", "cellcom", "סלקום",
-            "electric", "water", "gas", "internet", "phone",
-            "insurance", "ביטוח",
-        ],
-    },
-    # --- Health & Pharmacy ---
-    "Health": {
-        "group": "Essentials",
-        "icon": "💊",
-        "keywords": [
-            "בית מרקחת", "קופת חולים", "מכבי", "כללית", "ליאומית",
-            "pharmacy", "hospital", "clinic", "doctor", "health",
-            "super-pharm", "super pharm", "סופר פארם",
-            "בי קיור", "bi cure", "לייזר",
-        ],
-    },
-    # --- Shopping & Retail ---
-    "Shopping": {
-        "group": "Leisure",
-        "icon": "🛍️",
-        "keywords": [
-            "אמזון", "amazon", "ebay", "aliexpress", "zara", "h&m", "castro",
-            "renuar", "רנואר", "fox", "golf", "קסטרו", "shein",
-        ],
-    },
-    # --- Entertainment & Subscriptions ---
-    "Entertainment": {
-        "group": "Leisure",
-        "icon": "🎬",
-        "keywords": [
-            "netflix", "spotify", "apple", "google play", "youtube",
-            "yes", "yes+", "הוט", "hot", "disney", "amazon prime",
-            "סינמה", "cinema", "yes vod", "תיאטרון",
-        ],
-    },
-    # --- Savings & Investments ---
-    "Savings": {
-        "group": "Savings",
-        "icon": "💰",
-        "keywords": [
-            "קרן", "חיסכון", "השקעה", "pension", "savings", "investment",
-            "בנק", "bank", "ביטוח מנהלים",
-        ],
-    },
-    # --- Transfers & Fees ---
-    "Transfers": {
-        "group": "Other",
-        "icon": "🔄",
-        "keywords": [
-            "העברה", "העברת כספים", "transfer", "עמלה", "commission",
-            "משכנתא", "mortgage", "הלוואה", "loan",
-        ],
-    },
-    # --- Education ---
-    "Education": {
-        "group": "Essentials",
-        "icon": "📚",
-        "keywords": [
-            "אוניברסיטה", "מכללה", "university", "college", "course",
-            "קורס", "לימוד", "udemy", "coursera",
-        ],
-    },
+CATEGORY_RULES: dict[str, dict[str, str | None]] = {
+    "Groceries": {"group": "Essentials", "icon": None},
+    "Restaurants / Cafes": {"group": "Food", "icon": None},
+    "Food Delivery": {"group": "Food", "icon": None},
+    "Transportation": {"group": "Transport", "icon": None},
+    "Fuel / Car": {"group": "Transport", "icon": None},
+    "Public Transport": {"group": "Transport", "icon": None},
+    "Shopping / Clothing": {"group": "Lifestyle", "icon": None},
+    "Health / Pharmacy": {"group": "Health", "icon": None},
+    "Beauty / Cosmetics": {"group": "Lifestyle", "icon": None},
+    "Home": {"group": "Essentials", "icon": None},
+    "Utilities / Bills": {"group": "Essentials", "icon": None},
+    "Education": {"group": "Essentials", "icon": None},
+    "Entertainment": {"group": "Lifestyle", "icon": None},
+    "Travel": {"group": "Lifestyle", "icon": None},
+    "Digital Services / Subscriptions": {"group": "Lifestyle", "icon": None},
+    "Banking Fees / Interest": {"group": "Finance", "icon": None},
+    "Cash Withdrawal": {"group": "Finance", "icon": None},
+    "Other": {"group": "Other", "icon": None},
 }
 
-# ---------------------------------------------------------------------------
-# Fallback category — used when no rule matches
-# ---------------------------------------------------------------------------
+UNCATEGORIZED = Category(name="Other", group="Other", icon=None)
 
-UNCATEGORIZED = Category(name="Other", group="Other", icon="❓")
+
+def category_from_name(category_name: str) -> Category:
+    """Build a Category object from the fixed taxonomy."""
+    metadata = CATEGORY_RULES.get(category_name)
+    if not metadata:
+        metadata = CATEGORY_RULES["Other"]
+        category_name = "Other"
+
+    return Category(
+        name=category_name,
+        group=str(metadata["group"]),
+        icon=metadata.get("icon"),
+    )
 
 
 def classify_by_rules(merchant_name: str) -> tuple[Category, float]:
     """
-    Attempt to classify a merchant name using the keyword rule table.
+    Deprecated compatibility shim.
 
-    Args:
-        merchant_name: The raw merchant name string from the transaction.
-
-    Returns:
-        A tuple of (Category, confidence_score).
-        confidence is 1.0 for a rule match, 0.0 for the fallback.
-
-    WHY return a tuple?
-        The ClassificationAgent needs to know whether to escalate to
-        the AI path. A 0.0 confidence signals "I don't know — try AI."
+    Merchant-specific keyword matching has been removed. Technical fallbacks
+    should call the LLM first and use this only as a no-op fallback path.
     """
-    lower = merchant_name.lower()
-
-    for category_name, rule in CATEGORY_RULES.items():
-        for keyword in rule["keywords"]:
-            if keyword.lower() in lower:
-                return (
-                    Category(
-                        name=category_name,
-                        group=rule["group"],
-                        icon=rule.get("icon"),
-                    ),
-                    1.0,
-                )
-
-    # No match found → return the fallback with 0.0 confidence
     return UNCATEGORIZED, 0.0

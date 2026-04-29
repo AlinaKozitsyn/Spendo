@@ -21,7 +21,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config.settings import settings
-from backend.modules.classifier.src import ClassificationAgent
+from backend.modules.classifier.src import ClassificationAgent, generate_classification_report
 from backend.modules.excel_parser.src import ExcelParserAgent
 from backend.modules.planner.src import PlannerAgent
 
@@ -69,7 +69,9 @@ def _serialize_classified(ct) -> dict:
         "category": ct.category.name,
         "group": ct.category.group,
         "icon": ct.category.icon,
-        "confidence": ct.confidence,
+        "classification_confidence": ct.confidence,
+        "classification_source": ct.classification_source,
+        "classification_reason": ct.classification_reason,
     }
 
 
@@ -115,26 +117,44 @@ async def upload_file(file: UploadFile = File(...)):
         parse_result = parser.parse()
 
         if not parse_result.transactions:
-            raise HTTPException(
-                status_code=422,
-                detail=f"No transactions found. Errors: {parse_result.errors}",
-            )
+            detail = {
+                "message": "No transactions could be parsed from the uploaded file.",
+                "header_row_detected": parse_result.header_row,
+                "columns_in_file": parse_result.raw_columns,
+                "columns_matched": parse_result.detected_columns,
+                "required_fields_missing": parse_result.missing_fields,
+                "row_errors": parse_result.errors[:10],
+                "hint": (
+                    "The file columns could not be mapped to the required fields. "
+                    "Make sure the file contains columns for: date, merchant name, and amount. "
+                    "Supported formats: Cal, Max, Isracard, Leumi Card, Amex Israel."
+                ),
+            }
+            raise HTTPException(status_code=422, detail=detail)
 
-        # Step 2: Classify
-        use_ai = settings.USE_AI_CLASSIFICATION
-        classifier = ClassificationAgent(use_ai_fallback=use_ai)
+        # Step 2: Classify (Groq + llama-3.3-70b-versatile)
+        classifier = ClassificationAgent(
+            groq_api_key=settings.GROQ_API_KEY or None,
+            use_ai_fallback=settings.USE_AI_CLASSIFICATION,
+            llm_model=settings.LLM_CLASSIFICATION_MODEL,
+            llm_fallback_model=settings.LLM_CLASSIFICATION_FALLBACK_MODEL,
+        )
         classified = classifier.classify_all(parse_result.transactions)
 
         # Step 3: Store in memory
         _state["classified_transactions"] = classified
         _state["parse_result"] = parse_result
+        _state["classification_report"] = classifier.get_classification_report()
 
         return {
             "message": "File processed successfully",
             "filename": filename,
             "total_transactions": len(classified),
             "skipped_rows": parse_result.skipped_rows,
-            "errors": parse_result.errors[:5],  # Return first 5 errors max
+            "detected_columns": parse_result.detected_columns,
+            "header_row": parse_result.header_row,
+            "classification_stats": _state["classification_report"],
+            "errors": parse_result.errors[:10],
         }
     except HTTPException:
         raise
@@ -228,3 +248,17 @@ async def get_categories():
 
     categories = sorted(seen.values(), key=lambda c: c["total_spent"], reverse=True)
     return {"categories": categories}
+
+
+@app.get("/api/v1/classification-report")
+async def get_classification_report():
+    """Return detailed classification analytics."""
+    classified = _state["classified_transactions"]
+    if not classified:
+        return {"message": "No data. Upload a file first."}
+
+    return generate_classification_report(
+        classified=classified,
+        pipeline_stats=_state.get("classification_report"),
+        knowledge_dir=str(settings.KNOWLEDGE_DIR),
+    )

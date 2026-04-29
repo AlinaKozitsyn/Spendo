@@ -47,11 +47,23 @@ class Transaction:
     currency: str = "ILS"
     """ISO 4217 currency code. Default is Israeli New Shekel."""
 
+    billing_date: Optional[date] = None
+    """Date the transaction was billed/charged (may differ from transaction date)."""
+
+    category: Optional[str] = None
+    """Category from the Excel file itself (if the provider includes one)."""
+
     description: Optional[str] = None
     """Optional free-text description column from the Excel file."""
 
     source_file: Optional[str] = None
     """Filename of the Excel report this transaction came from."""
+
+    source_company: Optional[str] = None
+    """Credit card company name auto-detected from the file (e.g. 'Cal', 'Max')."""
+
+    raw_row: Optional[dict] = None
+    """Original row data as a dict, for debugging and manual correction UI."""
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +117,12 @@ class ClassifiedTransaction:
     1.0 = rule-based exact match; lower values indicate AI/fuzzy inference.
     """
 
+    classification_source: str = "rule_based"
+    """How the category was determined: 'rule_based', 'fuzzy', 'llm', or 'fallback'."""
+
+    classification_reason: str = ""
+    """Short explanation of why this category was chosen."""
+
     manually_overridden: bool = False
     """True when a human has corrected the auto-assigned category."""
 
@@ -156,3 +174,15 @@ class ParseResult:
 
     errors: list[str] = field(default_factory=list)
     """Non-fatal parsing warnings / error messages (one per problematic row)."""
+
+    detected_columns: dict[str, str] = field(default_factory=dict)
+    """Map of canonical field → raw column name that was matched."""
+
+    missing_fields: list[str] = field(default_factory=list)
+    """Required fields that could not be matched to any column."""
+
+    header_row: int = 0
+    """The 0-based row index detected as the header row."""
+
+    raw_columns: list[str] = field(default_factory=list)
+    """Original column names from the Excel file (after whitespace normalisation)."""

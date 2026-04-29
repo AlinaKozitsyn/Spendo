@@ -1,268 +1,198 @@
 """
 classifier/src/classifier.py
 ============================
-ClassificationAgent — Agent #2
+Groq-first transaction classification pipeline.
 
-RESPONSIBILITY:
-  Classify a list of Transaction objects into ClassifiedTransactions by
-  assigning each one a Category.
-
-THREE-PASS STRATEGY:
-  Pass 1 — Rule Engine (rules.py):
-    Fast, deterministic keyword matching. Handles ~60% of transactions.
-    Confidence = 1.0.
-
-  Pass 1.5 — Fuzzy Matching (fuzzy_matcher.py):
-    Catches near-misses: typos, extra spaces, abbreviations.
-    Handles ~15% of transactions. Confidence = 0.9.
-
-  Pass 2 — AI Fallback (Claude API):
-    For transactions neither rules nor fuzzy could match, we
-    send the merchant name to Claude and ask it to pick a category.
-    This handles unusual/new merchants without code changes.
-    Confidence = 0.7 (AI inference is good but not guaranteed).
-
-WHY THIS DESIGN?
-  - Speed: most transactions never hit the API → near-instant classification.
-  - Cost: only unknown merchants incur API calls.
-  - Auditability: rule-based results are 100% explainable; AI results are
-    flagged with lower confidence so the UI can surface them for review.
-
-DEPENDENCIES:
-  - anthropic (pip install anthropic)
-  - shared.models (Transaction, Category, ClassifiedTransaction)
-  - classifier.src.rules (classify_by_rules)
+Every uncached transaction is sent to the Groq-hosted LLM with the relevant
+transaction context. The system keeps a fixed taxonomy, validates strict JSON,
+caches repeated merchant classifications, and logs low-confidence results for
+review. It does not create merchant-specific rules automatically.
 """
 
 import json
 import logging
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-import anthropic
-
-from backend.modules.shared.src import Category, ClassifiedTransaction, Transaction
-from .fuzzy_matcher import classify_by_fuzzy
-from .rules import CATEGORY_RULES, UNCATEGORIZED, classify_by_rules
+from backend.modules.shared.src import ClassifiedTransaction, Transaction
+from .llm_classifier import LLMClassifier
+from .rules import UNCATEGORIZED, category_from_name
 
 logger = logging.getLogger(__name__)
 
+LOW_CONFIDENCE_THRESHOLD = 0.7
+
 
 class ClassificationAgent:
-    """
-    Classifies a batch of Transaction objects into ClassifiedTransactions.
-
-    Usage:
-        agent = ClassificationAgent()
-        results = agent.classify_all(transactions)
-
-    Args:
-        api_key:        Anthropic API key. Falls back to ANTHROPIC_API_KEY env var.
-        use_ai_fallback: If False, unknown merchants stay as "Other" without
-                         calling the API. Useful for testing / offline mode.
-    """
-
-    AI_CONFIDENCE = 0.7
-    """Confidence score assigned to AI-classified transactions."""
-
-    MODEL = "claude-sonnet-4-20250514"
-    """Claude model to use for AI classification."""
+    """Classify transactions using Groq LLM as the primary classifier."""
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        groq_api_key: Optional[str] = None,
         use_ai_fallback: bool = True,
+        llm_model: str = "llama-3.3-70b-versatile",
+        llm_fallback_model: str = "llama-3.1-8b-instant",
+        knowledge_dir: Optional[str] = None,
     ) -> None:
         self.use_ai_fallback = use_ai_fallback
-        self._client: Optional[anthropic.Anthropic] = None
+        self._knowledge_dir = Path(knowledge_dir or os.getenv("SPENDO_DATA_DIR", "data")) / "knowledge"
+        self._knowledge_dir.mkdir(parents=True, exist_ok=True)
 
+        self._llm: Optional[LLMClassifier] = None
+        api_key = groq_api_key or os.getenv("GROQ_API_KEY")
         if use_ai_fallback:
-            key = api_key or os.getenv("ANTHROPIC_API_KEY")
-            if not key:
-                logger.warning(
-                    "No ANTHROPIC_API_KEY found. AI fallback disabled."
-                )
-                self.use_ai_fallback = False
-            else:
-                self._client = anthropic.Anthropic(api_key=key)
+            self._llm = LLMClassifier(
+                api_key=api_key,
+                model=llm_model,
+                fallback_model=llm_fallback_model,
+            )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        self._stats = self._empty_stats()
 
     def classify_all(
         self, transactions: list[Transaction]
     ) -> list[ClassifiedTransaction]:
-        """
-        Classify a list of transactions.
+        """Classify a batch of transactions in input order."""
+        self._stats = self._empty_stats()
+        self._stats["total"] = len(transactions)
 
-        Pass 1: try rule-based classification for every transaction.
-        Pass 2: batch-call Claude for any that scored 0.0 confidence.
+        if not transactions:
+            return []
 
-        Args:
-            transactions: List of Transaction objects from ExcelParserAgent.
+        if not self._llm or not self._llm.is_available:
+            logger.warning("Groq classifier unavailable; using technical fallback for %d transactions", len(transactions))
+            self._stats["fallback"] = len(transactions)
+            self._stats["other_count"] = len(transactions)
+            self._stats["other_rate"] = 100.0
+            return [self._fallback_transaction(txn, "Groq classifier unavailable") for txn in transactions]
 
-        Returns:
-            List of ClassifiedTransaction in the same order as input.
-        """
+        llm_items = [self._transaction_to_llm_item(txn) for txn in transactions]
+        llm_results = self._llm.classify_batch(llm_items)
+
         results: list[ClassifiedTransaction] = []
-        needs_ai: list[tuple[int, Transaction]] = []  # (index, txn)
+        for txn, llm_result in zip(transactions, llm_results):
+            category_name = str(llm_result.get("category", "Other"))
+            confidence = float(llm_result.get("confidence", 0.0))
+            subcategory = str(llm_result.get("subcategory", "")).strip()
+            reason = str(llm_result.get("reason", "")).strip()
+            normalized = str(llm_result.get("normalized_merchant_name", "")).strip()
+            is_uncertain = bool(llm_result.get("is_uncertain", False))
 
-        # --- Pass 1: Rule engine (exact keyword match) ---
-        needs_fuzzy: list[tuple[int, Transaction]] = []
+            category = category_from_name(category_name)
+            source = "fallback" if confidence <= 0.0 and category.name == "Other" else "llm"
 
-        for idx, txn in enumerate(transactions):
-            category, confidence = classify_by_rules(txn.merchant_name)
-            if confidence > 0.0:
-                results.append(
-                    ClassifiedTransaction(
-                        transaction=txn,
-                        category=category,
-                        confidence=confidence,
-                    )
-                )
+            reason_parts = []
+            if subcategory:
+                reason_parts.append(f"[{subcategory}]")
+            if reason:
+                reason_parts.append(reason)
+            if normalized:
+                reason_parts.append(f"normalized={normalized}")
+            if is_uncertain:
+                reason_parts.append("marked_for_review")
+
+            classified = ClassifiedTransaction(
+                transaction=txn,
+                category=category,
+                confidence=confidence,
+                classification_source=source,
+                classification_reason=" ".join(reason_parts),
+            )
+            results.append(classified)
+
+            if source == "llm":
+                self._stats["llm"] += 1
             else:
-                # Placeholder — will be replaced in Pass 1.5 or Pass 2
-                results.append(
-                    ClassifiedTransaction(
-                        transaction=txn,
-                        category=UNCATEGORIZED,
-                        confidence=0.0,
-                    )
-                )
-                needs_fuzzy.append((idx, txn))
+                self._stats["fallback"] += 1
+
+            if confidence < LOW_CONFIDENCE_THRESHOLD or is_uncertain or category.name == "Other":
+                self._stats["review_required"] += 1
+                self._log_review(txn, llm_result)
+
+        other_count = sum(1 for result in results if result.category.name == "Other")
+        self._stats["other_count"] = other_count
+        self._stats["other_rate"] = round(other_count / max(len(transactions), 1) * 100, 1)
+        self._stats["cache"] = self._llm.get_cache_stats()
 
         logger.info(
-            "ClassificationAgent Pass 1: %d rule-matched, %d unmatched",
-            len(transactions) - len(needs_fuzzy),
-            len(needs_fuzzy),
+            "Classification complete: %d total, %d llm, %d fallback, %d review, %d other (%.1f%%)",
+            len(transactions),
+            self._stats["llm"],
+            self._stats["fallback"],
+            self._stats["review_required"],
+            other_count,
+            self._stats["other_rate"],
         )
-
-        # --- Pass 1.5: Fuzzy matching ---
-        for idx, txn in needs_fuzzy:
-            category, confidence = classify_by_fuzzy(txn.merchant_name)
-            if confidence > 0.0:
-                results[idx] = ClassifiedTransaction(
-                    transaction=txn,
-                    category=category,
-                    confidence=confidence,
-                )
-            else:
-                needs_ai.append((idx, txn))
-
-        logger.info(
-            "ClassificationAgent Pass 1.5: %d fuzzy-matched, %d need AI",
-            len(needs_fuzzy) - len(needs_ai),
-            len(needs_ai),
-        )
-
-        # --- Pass 2: AI fallback ---
-        if needs_ai and self.use_ai_fallback and self._client:
-            ai_results = self._classify_batch_with_ai(needs_ai)
-            for idx, classified in ai_results:
-                results[idx] = classified
 
         return results
 
     def classify_one(self, transaction: Transaction) -> ClassifiedTransaction:
-        """
-        Classify a single transaction (convenience wrapper).
-
-        Useful for re-classifying a single corrected transaction without
-        re-processing the whole batch.
-        """
+        """Classify one transaction."""
         return self.classify_all([transaction])[0]
 
-    # ------------------------------------------------------------------
-    # AI classification helpers
-    # ------------------------------------------------------------------
+    def get_classification_report(self) -> dict:
+        """Return statistics from the last classification run."""
+        return dict(self._stats)
 
-    def _classify_batch_with_ai(
-        self, items: list[tuple[int, Transaction]]
-    ) -> list[tuple[int, ClassifiedTransaction]]:
-        """
-        Sends unknown merchants to Claude for classification.
-
-        Batches all unknowns into a single API call to minimise latency and cost.
-        Claude is prompted to return a JSON list of category assignments.
-
-        Args:
-            items: List of (result_index, Transaction) tuples to classify.
-
-        Returns:
-            List of (result_index, ClassifiedTransaction) tuples.
-        """
-        # Build the list of category names for Claude to choose from
-        valid_categories = list(CATEGORY_RULES.keys()) + ["Other"]
-
-        # Build a compact prompt: one merchant per line
-        merchant_list = "\n".join(
-            f"{i}. {txn.merchant_name}"
-            for i, (_, txn) in enumerate(items)
-        )
-
-        prompt = f"""You are a financial expense classifier.
-Classify each merchant into exactly one of these categories:
-{json.dumps(valid_categories)}
-
-Merchants to classify:
-{merchant_list}
-
-Return ONLY a JSON array of objects with keys "index" (int) and "category" (string).
-Example: [{{"index": 0, "category": "Dining"}}, {{"index": 1, "category": "Shopping"}}]
-Do not include any explanation, only the JSON array."""
-
-        try:
-            message = self._client.messages.create(
-                model=self.MODEL,
-                max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = message.content[0].text.strip()
-            assignments: list[dict] = json.loads(raw)
-        except Exception as exc:
-            logger.error("AI classification failed: %s", exc)
-            # Return the items unchanged (Uncategorized) on failure
-            return [
-                (
-                    idx,
-                    ClassifiedTransaction(
-                        transaction=txn,
-                        category=UNCATEGORIZED,
-                        confidence=0.0,
-                    ),
-                )
-                for idx, txn in items
-            ]
-
-        # Build a lookup: prompt-index → category name
-        ai_map: dict[int, str] = {
-            a["index"]: a["category"] for a in assignments
+    def _transaction_to_llm_item(self, txn: Transaction) -> dict:
+        return {
+            "merchant_name": txn.merchant_name,
+            "description": txn.description or "",
+            "amount": txn.amount,
+            "currency": txn.currency,
+            "date": txn.transaction_date.isoformat() if txn.transaction_date else "",
+            "billing_date": txn.billing_date.isoformat() if txn.billing_date else "",
+            "source_company": txn.source_company or "",
+            "raw_fields": txn.raw_row or {},
         }
 
-        results = []
-        for prompt_idx, (result_idx, txn) in enumerate(items):
-            category_name = ai_map.get(prompt_idx, "Other")
-            rule = CATEGORY_RULES.get(category_name)
+    def _fallback_transaction(self, txn: Transaction, reason: str) -> ClassifiedTransaction:
+        fallback_result = {
+            "category": "Other",
+            "subcategory": "",
+            "confidence": 0.0,
+            "reason": reason,
+            "normalized_merchant_name": "",
+            "is_uncertain": True,
+        }
+        self._log_review(txn, fallback_result)
+        return ClassifiedTransaction(
+            transaction=txn,
+            category=UNCATEGORIZED,
+            confidence=0.0,
+            classification_source="fallback",
+            classification_reason=reason,
+        )
 
-            if rule:
-                category = Category(
-                    name=category_name,
-                    group=rule["group"],
-                    icon=rule.get("icon"),
-                )
-            else:
-                category = UNCATEGORIZED
+    def _log_review(self, txn: Transaction, llm_result: dict) -> None:
+        """Persist low-confidence or technical-fallback results for human review."""
+        log_path = self._knowledge_dir / "classification_review.jsonl"
+        entry = {
+            "merchant_name": txn.merchant_name,
+            "description": txn.description,
+            "amount": txn.amount,
+            "currency": txn.currency,
+            "date": txn.transaction_date.isoformat() if txn.transaction_date else "",
+            "raw_fields": txn.raw_row or {},
+            "classification": llm_result,
+            "timestamp": datetime.now().isoformat(),
+        }
+        try:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            logger.warning("Failed to write classification review log: %s", exc)
 
-            results.append(
-                (
-                    result_idx,
-                    ClassifiedTransaction(
-                        transaction=txn,
-                        category=category,
-                        confidence=self.AI_CONFIDENCE,
-                    ),
-                )
-            )
-
-        return results
+    @staticmethod
+    def _empty_stats() -> dict:
+        return {
+            "total": 0,
+            "llm": 0,
+            "fallback": 0,
+            "review_required": 0,
+            "other_count": 0,
+            "other_rate": 0.0,
+            "cache": {"cached_merchants": 0},
+        }

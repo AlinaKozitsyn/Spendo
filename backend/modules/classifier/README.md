@@ -1,30 +1,39 @@
-# ClassificationAgent — Module README
+# ClassificationAgent
 
 ## Purpose
-Classifies `Transaction` objects into `ClassifiedTransaction` objects by
-assigning each transaction a `Category`.
+Classifies `Transaction` objects into `ClassifiedTransaction` objects by using
+Groq-hosted LLM semantic classification as the primary classifier.
 
 ## Strategy
-1. **Pass 1 — Rule engine** (`rules.py`): fast keyword matching, zero API cost.
-2. **Pass 2 — AI fallback** (`classifier.py`): Claude classifies unknowns.
+1. Normalize parsed transaction fields into an LLM request payload.
+2. Send uncached transactions to Groq using `llama-3.3-70b-versatile`.
+3. Validate strict JSON against the fixed taxonomy in `src/rules.py`.
+4. Cache repeated high-confidence merchant classifications in memory.
+5. Log low-confidence, uncertain, `Other`, or technical fallback results to
+   `classification_review.jsonl` for human review.
+
+The classifier does not maintain merchant-specific rules and does not create
+new rules when a classification is wrong.
 
 ## Public API
 
 ```python
 from backend.modules.classifier import ClassificationAgent
 
-agent = ClassificationAgent()  # reads ANTHROPIC_API_KEY from env
-results = agent.classify_all(transactions)  # list[ClassifiedTransaction]
+agent = ClassificationAgent()  # reads GROQ_API_KEY from env
+results = agent.classify_all(transactions)
 ```
 
-## Adding New Categories
-Edit `CATEGORY_RULES` in `src/rules.py`. No code changes needed elsewhere.
+## Configuration
 
-## Dependencies
-- `anthropic` (for AI fallback)
-- `backend.modules.shared`
+```env
+GROQ_API_KEY=gsk_...
+LLM_CLASSIFICATION_MODEL=llama-3.3-70b-versatile
+LLM_CLASSIFICATION_FALLBACK_MODEL=llama-3.1-8b-instant
+```
 
 ## Tests
+
 ```bash
-pytest backend/modules/classifier/tests/unit/
+python -m pytest backend/modules/classifier/tests/unit -q
 ```
