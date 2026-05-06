@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface MoneyFact {
   title: string;
@@ -60,6 +60,31 @@ const MONEY_FACTS: MoneyFact[] = [
   },
 ];
 
+// Coin burst that fires on correct answer
+function CoinBurst({ burstKey }: { burstKey: number }) {
+  const COUNT = 12;
+  if (burstKey === 0) return null;
+  return (
+    <div className="coin-burst" aria-hidden="true" key={burstKey}>
+      {Array.from({ length: COUNT }, (_, i) => (
+        <span
+          key={i}
+          className="coin-burst-token"
+          style={
+            {
+              "--angle": `${(360 / COUNT) * i}deg`,
+              "--dist": `${52 + (i % 4) * 14}px`,
+              "--delay": `${(i * 0.042).toFixed(3)}s`,
+            } as React.CSSProperties
+          }
+        >
+          ₪
+        </span>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   compact?: boolean;
 }
@@ -69,6 +94,9 @@ export function MoneyFactsLoader({ compact = false }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [burstKey, setBurstKey] = useState(0);
+  const prevAnsweredRef = useRef(false);
+
   const challenge = MONEY_FACTS[activeIndex];
   const answered = selectedIndex !== null;
   const isCorrect = selectedIndex === challenge.correctIndex;
@@ -82,29 +110,28 @@ export function MoneyFactsLoader({ compact = false }: Props) {
     const nextTimer = window.setTimeout(() => {
       goToNextChallenge();
     }, answered ? 5200 : 9000);
-
-    return () => {
-      window.clearTimeout(nextTimer);
-    };
+    return () => window.clearTimeout(nextTimer);
   }, [activeIndex, answered]);
 
+  // reset burst tracking when question changes
+  useEffect(() => {
+    prevAnsweredRef.current = false;
+  }, [activeIndex]);
+
   const moveChallenge = (direction: 1 | -1) => {
-    setActiveIndex((current) => (
-      current + direction + MONEY_FACTS.length
-    ) % MONEY_FACTS.length);
+    setActiveIndex((c) => (c + direction + MONEY_FACTS.length) % MONEY_FACTS.length);
     setSelectedIndex(null);
   };
 
-  const goToNextChallenge = () => {
-    moveChallenge(1);
-  };
+  const goToNextChallenge = () => moveChallenge(1);
 
   const chooseAnswer = (choiceIndex: number) => {
     if (answered) return;
     setSelectedIndex(choiceIndex);
     if (choiceIndex === challenge.correctIndex) {
-      setScore((current) => current + 10);
-      setStreak((current) => current + 1);
+      setScore((s) => s + 10);
+      setStreak((s) => s + 1);
+      setBurstKey((k) => k + 1);
     } else {
       setStreak(0);
     }
@@ -129,6 +156,7 @@ export function MoneyFactsLoader({ compact = false }: Props) {
           <span className="money-coin coin-two">%</span>
           <span className="money-coin coin-three">+</span>
           <div className="money-loader-ring" />
+          <CoinBurst burstKey={burstKey} />
         </div>
 
         <div className="money-facts-play">
@@ -144,11 +172,7 @@ export function MoneyFactsLoader({ compact = false }: Props) {
               const isSelected = selectedIndex === index;
               const isAnswer = challenge.correctIndex === index;
               const resultClass = answered
-                ? isAnswer
-                  ? "correct"
-                  : isSelected
-                    ? "wrong"
-                    : ""
+                ? isAnswer ? "correct" : isSelected ? "wrong" : ""
                 : "";
 
               return (
@@ -170,7 +194,7 @@ export function MoneyFactsLoader({ compact = false }: Props) {
           <div className={`money-facts-result ${answered ? "shown" : ""}`}>
             {answered ? (
               <>
-                <strong>{isCorrect ? "Correct. +10 points" : "Not quite. Good to know."}</strong>
+                <strong>{isCorrect ? "Correct! +10 points" : "Not quite. Good to know."}</strong>
                 <span>{challenge.fact}</span>
                 <em>{challenge.tip}</em>
               </>
@@ -186,14 +210,9 @@ export function MoneyFactsLoader({ compact = false }: Props) {
 
       <div className="money-facts-footer">
         <div className="money-facts-controls" aria-label="Money challenge controls">
-          <button type="button" onClick={() => moveChallenge(-1)} aria-label="Previous money challenge">
-            {"<"}
-          </button>
-          <button type="button" onClick={goToNextChallenge} aria-label="Next money challenge">
-            {">"}
-          </button>
+          <button type="button" onClick={() => moveChallenge(-1)} aria-label="Previous money challenge">{"<"}</button>
+          <button type="button" onClick={goToNextChallenge} aria-label="Next money challenge">{">"}</button>
         </div>
-
         <div className="money-facts-progress" aria-hidden="true">
           <span style={{ width: `${progress}%` }} />
         </div>

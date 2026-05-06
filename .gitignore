@@ -121,3 +121,4 @@ data/uploads/*.xls
 tmp/
 temp/
 memory-game/
+.vercel

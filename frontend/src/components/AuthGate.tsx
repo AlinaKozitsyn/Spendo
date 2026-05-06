@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { createUser, getCurrentSession, signIn, signOut, userExists } from "../auth";
+import { AccountPanel } from "./AccountPanel";
+import { CosmicAuthBackground } from "./CosmicAuthBackground";
 
 const DEV_VERIFICATION_CODE = "123456";
 
@@ -36,27 +38,55 @@ export function AuthGate({ children }: Props) {
   const [showCookies, setShowCookies] = useState(false);
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
+  const [showAccount, setShowAccount] = useState(false);
+
+  const handleLogout = () => {
+    signOut();
+    setSessionEmail(null);
+    setMode("signin");
+    setSignupStep("email");
+    setEmail("");
+    setPassword("");
+    setCode("");
+    setTermsAccepted(false);
+    setCookiesAccepted(false);
+    setMessage(null);
+    setShowAccount(false);
+  };
+
   if (sessionEmail) {
     return (
       <>
-        <button
-          type="button"
-          className="auth-logout-btn"
-          onClick={() => {
-            signOut();
-            setSessionEmail(null);
-            setMode("signin");
-            setSignupStep("email");
-            setEmail("");
-            setPassword("");
-            setCode("");
-            setTermsAccepted(false);
-            setCookiesAccepted(false);
-            setMessage(null);
-          }}
-        >
-          Log Out
-        </button>
+        <div className="auth-topbar">
+          <button
+            type="button"
+            className="auth-account-btn"
+            onClick={() => setShowAccount((v) => !v)}
+            aria-label="Open account"
+            aria-expanded={showAccount}
+          >
+            <span className="auth-account-avatar" aria-hidden="true">
+              {sessionEmail.slice(0, 2).toUpperCase()}
+            </span>
+            My Account
+          </button>
+          <button
+            type="button"
+            className="auth-logout-btn"
+            onClick={handleLogout}
+          >
+            Log Out
+          </button>
+        </div>
+
+        {showAccount && (
+          <AccountPanel
+            email={sessionEmail}
+            onClose={() => setShowAccount(false)}
+            onDeleted={handleLogout}
+          />
+        )}
+
         {children}
       </>
     );
@@ -212,6 +242,7 @@ export function AuthGate({ children }: Props) {
 
   return (
     <main className="auth-shell">
+      <CosmicAuthBackground />
       <section className="auth-panel" aria-label="Authentication">
         <div className="auth-brand">
           <h1>Spendo</h1>

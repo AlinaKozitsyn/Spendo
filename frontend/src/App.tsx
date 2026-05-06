@@ -25,6 +25,10 @@ import { BudgetScorePanel } from "./components/BudgetScorePanel";
 import { MultiMonthForecast } from "./components/MultiMonthForecast";
 import { AuthGate } from "./components/AuthGate";
 import { MoneyFactsLoader } from "./components/MoneyFactsLoader";
+import { NotesPanel } from "./components/NotesPanel";
+import { GoalsPanel } from "./components/GoalsPanel";
+import { GoalVsActualChart } from "./components/GoalVsActualChart";
+import { getCurrentSession, saveLastCategories } from "./auth";
 
 type Mode = "single" | "multi";
 
@@ -79,6 +83,12 @@ export default function App() {
       });
       setActiveFilter(null);
       await loadDashboard();
+      // persist categories so AccountPanel goals can access them
+      const email = getCurrentSession();
+      if (email) {
+        const catData = await fetchCategories();
+        saveLastCategories(email, catData.categories.map((c) => ({ name: c.name, icon: c.icon })));
+      }
     } catch (err: any) {
       setUploadMsg({ text: err.message || "Upload failed", ok: false });
     } finally {
@@ -280,6 +290,20 @@ export default function App() {
                   <SpendingVelocityPanel
                     transactions={transactions}
                     totalSpent={totalSpent}
+                  />
+                </div>
+
+                {/* Goals and notes */}
+                <GoalVsActualChart categories={categories} />
+
+                <div className="card">
+                  <GoalsPanel categories={categories} />
+                </div>
+
+                <div className="card">
+                  <NotesPanel
+                    defaultMonth={summaries.length > 0 ? summaries[0].month : new Date().getMonth() + 1}
+                    defaultYear={summaries.length > 0 ? summaries[0].year : new Date().getFullYear()}
                   />
                 </div>
 
