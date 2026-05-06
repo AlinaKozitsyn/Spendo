@@ -143,9 +143,7 @@ class ClassificationAgent:
             "amount": txn.amount,
             "currency": txn.currency,
             "date": txn.transaction_date.isoformat() if txn.transaction_date else "",
-            "billing_date": txn.billing_date.isoformat() if txn.billing_date else "",
             "source_company": txn.source_company or "",
-            "raw_fields": txn.raw_row or {},
         }
 
     def _fallback_transaction(self, txn: Transaction, reason: str) -> ClassifiedTransaction:

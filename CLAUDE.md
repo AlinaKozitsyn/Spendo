@@ -14,7 +14,7 @@
 |---|---|
 | **Name** | {{PROJECT_NAME}} |
 | **Purpose** | {{PROJECT_DESCRIPTION}} |
-| **Current sprint** | Sprint 01 |
+| **Current sprint** | Sprint 03 |
 | **Dev port** | {{DEV_PORT}} |
 
 ---

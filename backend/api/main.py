@@ -52,6 +52,9 @@ _state = {
     "parse_result": None,
 }
 
+# Multi-month state — 3 independent slots, never shared with single-month state
+_multi_state: dict[int, dict] = {}   # slot (0/1/2) → {classified, parse_result, filename}
+
 
 # ---------------------------------------------------------------------------
 # Helper: serialize dataclasses to dicts for JSON response
@@ -248,6 +251,115 @@ async def get_categories():
 
     categories = sorted(seen.values(), key=lambda c: c["total_spent"], reverse=True)
     return {"categories": categories}
+
+
+# ---------------------------------------------------------------------------
+# Multi-month endpoints  (slots 0 / 1 / 2 — independent from single-month state)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/upload-slot/{slot}")
+async def upload_slot(slot: int, file: UploadFile = File(...)):
+    """Upload one month's statement into slot 0, 1, or 2 for multi-month comparison."""
+    if slot not in (0, 1, 2):
+        raise HTTPException(status_code=400, detail="slot must be 0, 1, or 2")
+
+    filename = file.filename or f"slot{slot}.xlsx"
+    ext = Path(filename).suffix.lower()
+    if ext not in (".xlsx", ".xls", ".csv"):
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext}")
+
+    settings.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    save_path = settings.UPLOADS_DIR / f"slot{slot}_{filename}"
+    with open(save_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    logger.info("Multi-slot %d: saved to %s", slot, save_path)
+
+    try:
+        parser = ExcelParserAgent(file_path=str(save_path))
+        parse_result = parser.parse()
+
+        if not parse_result.transactions:
+            raise HTTPException(status_code=422, detail={
+                "message": "No transactions could be parsed from the uploaded file.",
+                "required_fields_missing": parse_result.missing_fields,
+            })
+
+        classifier = ClassificationAgent(
+            groq_api_key=settings.GROQ_API_KEY or None,
+            use_ai_fallback=settings.USE_AI_CLASSIFICATION,
+            llm_model=settings.LLM_CLASSIFICATION_MODEL,
+            llm_fallback_model=settings.LLM_CLASSIFICATION_FALLBACK_MODEL,
+        )
+        classified = classifier.classify_all(parse_result.transactions)
+
+        _multi_state[slot] = {
+            "classified": classified,
+            "parse_result": parse_result,
+            "filename": filename,
+        }
+
+        return {
+            "message": "Slot processed successfully",
+            "slot": slot,
+            "filename": filename,
+            "total_transactions": len(classified),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Multi-slot %d pipeline failed: %s", slot, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/v1/multi-summary")
+async def get_multi_summary():
+    """Return per-slot summaries for the multi-month dashboard."""
+    if not _multi_state:
+        return {"slots": []}
+
+    planner = PlannerAgent()
+    result = []
+    for slot in sorted(_multi_state.keys()):
+        data = _multi_state[slot]
+        classified = data["classified"]
+        summaries = planner.monthly_summaries(classified)
+        top = planner.top_merchants(classified, top_n=5)
+
+        # Use the first (and typically only) monthly summary from the file
+        s = summaries[0] if summaries else None
+        result.append({
+            "slot": slot,
+            "filename": data["filename"],
+            "label": s.label if s else f"Slot {slot}",
+            "year":  s.year  if s else 0,
+            "month": s.month if s else 0,
+            "total_spent": s.total_spent if s else 0,
+            "transaction_count": len(classified),
+            "categories": [
+                {
+                    "name": c.category_name,
+                    "group": c.group,
+                    "total_spent": c.total_spent,
+                    "transaction_count": c.transaction_count,
+                    "icon": c.icon,
+                }
+                for c in (s.categories if s else [])
+            ],
+            "top_merchants": [
+                {"name": name, "total_spent": round(amt, 2)}
+                for name, amt in top
+            ],
+        })
+
+    return {"slots": result}
+
+
+@app.delete("/api/v1/upload-slot/{slot}")
+async def clear_slot(slot: int):
+    """Clear a single multi-month slot."""
+    _multi_state.pop(slot, None)
+    return {"cleared": slot}
 
 
 @app.get("/api/v1/classification-report")

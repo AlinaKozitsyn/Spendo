@@ -7,6 +7,10 @@ Centralised application settings loaded from environment variables.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 class Settings:
     """Application-wide configuration."""

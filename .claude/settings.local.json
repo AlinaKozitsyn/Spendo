@@ -26,7 +26,10 @@
       "Bash(curl -s http://localhost:8000/api/v1/health)",
       "Bash(curl -s -F \"file=@C:\\\\Users\\\\אלינה\\\\Downloads\\\\3.26.xlsx\" http://localhost:8000/api/v1/upload)",
       "Bash(curl -s http://localhost:8000/api/v1/summary)",
-      "Bash(curl -s -F \"file=@C:\\\\Users\\\\אלינה\\\\Downloads\\\\2.26 \\(1\\).xlsx\" http://localhost:8000/api/v1/upload)"
+      "Bash(curl -s -F \"file=@C:\\\\Users\\\\אלינה\\\\Downloads\\\\2.26 \\(1\\).xlsx\" http://localhost:8000/api/v1/upload)",
+      "Bash(npm --version)",
+      "Bash(claude --version)",
+      "Bash(codex --version)"
     ],
     "deny": [
       "Bash(git push --force *)",

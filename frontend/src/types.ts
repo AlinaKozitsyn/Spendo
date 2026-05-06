@@ -47,3 +47,26 @@ export interface UploadResponse {
   skipped_rows: number;
   errors: string[];
 }
+
+export interface SlotUploadResponse {
+  message: string;
+  slot: number;
+  filename: string;
+  total_transactions: number;
+}
+
+export interface SlotSummary {
+  slot: number;
+  filename: string;
+  label: string;
+  year: number;
+  month: number;
+  total_spent: number;
+  transaction_count: number;
+  categories: CategorySummary[];
+  top_merchants: TopMerchant[];
+}
+
+export interface MultiSummary {
+  slots: SlotSummary[];
+}
