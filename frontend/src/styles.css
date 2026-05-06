@@ -663,9 +663,10 @@ body {
   min-height: 100vh;
   position: relative;
   z-index: 1;
-  display: grid;
-  place-items: center;
-  padding: 28px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 28px 20px 28px max(40px, 6%);
 }
 
 .auth-panel {

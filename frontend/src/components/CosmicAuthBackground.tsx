@@ -43,10 +43,10 @@ export function CosmicAuthBackground() {
     }));
 
     const planets: Planet[] = [
-      { orbitR: 72,  speed: 0.020, size: 7,  color: "#a5b4fc", symbol: "₪", angle: 0 },
-      { orbitR: 128, speed: 0.012, size: 10, color: "#fbbf24", symbol: "$", angle: 1.3 },
-      { orbitR: 192, speed: 0.007, size: 13, color: "#34d399", symbol: "%", angle: 2.8 },
-      { orbitR: 262, speed: 0.0042, size: 9, color: "#c084fc", symbol: "↑", angle: 4.2 },
+      { orbitR: 55,  speed: 0.020, size: 7,  color: "#a5b4fc", symbol: "₪", angle: 0 },
+      { orbitR: 98,  speed: 0.012, size: 10, color: "#fbbf24", symbol: "$", angle: 1.3 },
+      { orbitR: 148, speed: 0.007, size: 12, color: "#34d399", symbol: "%", angle: 2.8 },
+      { orbitR: 200, speed: 0.0042, size: 9, color: "#c084fc", symbol: "↑", angle: 4.2 },
     ];
 
     const SYMBOLS = ["₪", "$", "€", "¢", "%"];
@@ -67,9 +67,12 @@ export function CosmicAuthBackground() {
     const draw = () => {
       ctx.clearRect(0, 0, W, H);
 
-      // position solar system at 70 % of width, vertically centred
-      const cx = Math.min(W * 0.70, W - 120);
+      // anchor solar system 160 px from right edge — always clear of the left-aligned auth panel
+      const outerOrbit = 200;
+      const cx = W - outerOrbit - 60;
       const cy = H * 0.50;
+      // don't render if there's no room (very narrow screens)
+      if (cx < outerOrbit + 20) { t++; raf = requestAnimationFrame(draw); return; }
 
       // stars
       for (const s of stars) {
