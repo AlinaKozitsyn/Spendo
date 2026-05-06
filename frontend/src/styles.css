@@ -2128,6 +2128,106 @@ body {
 
 .acct-cancel-btn:hover { color: var(--color-text); }
 
+/* Note composer inside account panel */
+.acct-note-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.acct-note-period-row {
+  display: flex;
+  gap: 8px;
+}
+
+.acct-select {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(3,10,24,0.7);
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  direction: ltr;
+}
+
+.acct-select:focus { border-color: rgba(129,140,248,0.7); }
+
+.acct-textarea {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(3,10,24,0.7);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  direction: ltr;
+}
+
+.acct-textarea:focus { border-color: rgba(129,140,248,0.7); }
+.acct-textarea::placeholder { color: var(--color-text-secondary); opacity: 0.7; }
+
+/* Goal add row */
+.acct-goal-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(129,140,248,0.2);
+  border-radius: 10px;
+  background: rgba(129,140,248,0.05);
+}
+
+.acct-goal-cat-input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(3,10,24,0.7);
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.2s;
+  direction: ltr;
+}
+
+.acct-goal-cat-input:focus { border-color: rgba(129,140,248,0.7); }
+.acct-goal-cat-input::placeholder { color: var(--color-text-secondary); opacity: 0.6; }
+
+.acct-add-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: opacity 0.2s, transform 0.15s;
+  line-height: 1;
+}
+
+.acct-add-btn:hover { opacity: 0.88; transform: scale(1.1); }
+
+/* force LTR on the whole panel */
+.acct-panel { direction: ltr; }
+
 /* ── Coin Burst Animation ─────────────────────────────────────────────────── */
 
 .coin-burst {
